@@ -10,6 +10,9 @@ import base64
 from ultralytics.utils.ops import non_max_suppression, scale_boxes
 import torch
 
+# DÒNG DUY NHẤT ĐƯỢC THÊM – TỰ ĐỘNG TẢI MODEL TỪ GOOGLE DRIVE
+from download_model import *   # ← Đây là dòng quan trọng nhất! Chạy ngay khi app khởi động
+
 # ==================== CẤU HÌNH APP ====================
 app = FastAPI()
 
@@ -19,11 +22,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Templates
 templates = Jinja2Templates(directory="templates")
 
-# Load ONNX model
-session = ort.InferenceSession("model/best.onnx")
-input_name = session.get_inputs()[0].name
-
-# Import tên bệnh + màu (bắt buộc phải có file này trong app/)
+# Import tên bệnh + màu
 from disease_names import DISEASE_NAMES, COLORS
 
 # ==================== HÀM TIỀN XỬ LÝ ====================
@@ -35,18 +34,16 @@ def preprocess(img):
 
 # ==================== CÁC ROUTE ====================
 
-# Trang đăng nhập (tùy chọn bật/tắt)
+# Trang đăng nhập (tùy chọn)
 @app.get("/login")
 async def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
-# Trang chủ - có thể bắt buộc login hoặc không
+# Trang chủ
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    # Nếu bạn MUỐN BẮT BUỘC LOGIN → bỏ comment 2 dòng dưới
+    # Nếu muốn bắt buộc login → bỏ comment dòng dưới
     # return RedirectResponse("/login")
-
-    # Nếu KHÔNG MUỐN bắt buộc login → để nguyên như này
     return templates.TemplateResponse("index.html", {"request": request})
 
 # API dự đoán
@@ -66,7 +63,7 @@ async def predict(file: UploadFile = File(...)):
     pred = torch.from_numpy(outputs[0]).sigmoid()
     pred = non_max_suppression(pred, conf_thres=0.4, iou_thres=0.45, max_det=100)[0]
 
-    # Scale boxes về kích thước ảnh gốc
+    # Scale boxes về ảnh gốc
     if len(pred) > 0:
         pred[:, :4] = scale_boxes((640, 640), pred[:, :4], img.shape[:2]).round()
 
@@ -79,7 +76,6 @@ async def predict(file: UploadFile = File(...)):
         cls = int(cls)
         label = DISEASE_NAMES.get(cls, "Không xác định")
         color_hex = COLORS.get(cls, "#ffffff")
-        # Chuyển hex → BGR
         color = tuple(int(color_hex.lstrip('#')[i:i+2], 16) for i in (4, 2, 0))  # RGB → BGR
 
         cv2.rectangle(result_img, (int(x1), int(y1)), (int(x2), int(y2)), color, 3)
@@ -88,16 +84,12 @@ async def predict(file: UploadFile = File(...)):
 
         results.append({"disease": label, "confidence": round(conf, 3)})
 
-    # Encode ảnh kết quả
+    # Encode ảnh
     _, encoded = cv2.imencode('.jpg', result_img, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
     image_base64 = base64.b64encode(encoded).decode()
 
-    return {
-        "image": image_base64,
-        "diseases": results
-    }
+    return {"image": image_base64, "diseases": results}
 
 # ==================== CHẠY SERVER ====================
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-    # Lưu ý: khi deploy Render thì dùng lệnh: uvicorn main:app --host 0.0.0.0 --port $PORT
