@@ -6,4 +6,6 @@ opencv-python
 numpy
 ultralytics
 jinja2
+
 python-multipart
+gdown
