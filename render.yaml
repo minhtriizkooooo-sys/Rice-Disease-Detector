@@ -1,0 +1,23 @@
+# render.yaml
+services:
+  - type: web
+    name: rice-disease-detector
+    env: python
+    region: singapore    # hoặc oregon, chọn gần Việt Nam nhất là singapore
+    plan: free            # hoặc starter nếu muốn nhanh hơn
+
+    # Thư mục chứa code (nếu bạn để code trong folder app thì để là .)
+    buildCommand: pip install -r requirements.txt
+
+    # Lệnh chạy khi khởi động
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
+    # Python version (Render hiện tại hỗ trợ tốt nhất)
+    envVars:
+      PYTHON_VERSION: 3.11.9
+
+    # Tự động deploy khi push GitHub
+    autoDeploy: true
+
+    # (Tùy chọn) Tăng memory nếu model nặng ~1.5GB
+    # plan: starter   # nếu dùng free mà bị "Memory quota exceeded" thì đổi sang starter ~8$/tháng
