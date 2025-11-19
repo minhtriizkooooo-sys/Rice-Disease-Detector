@@ -1,11 +1,10 @@
 fastapi
 uvicorn[standard]
-onnxruntime          # nếu deploy trên CPU
-# onnxruntime-gpu    # uncomment dòng này nếu server có GPU
+onnxruntime
 opencv-python
 numpy
 ultralytics
 jinja2
-
 python-multipart
-gdown
+torch
+gdown        # ← thêm dòng này
