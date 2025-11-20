@@ -7,7 +7,8 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 import base64
-from ultralytics.utils.ops import non_max_suppression, scale_boxes
+from ultralytics.utils.nms import non_max_suppression
+from ultralytics.utils.ops import scale_boxes
 import torch
 
 # DÒNG DUY NHẤT ĐƯỢC THÊM – TỰ ĐỘNG TẢI MODEL TỪ GOOGLE DRIVE
@@ -93,3 +94,4 @@ async def predict(file: UploadFile = File(...)):
 # ==================== CHẠY SERVER ====================
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
