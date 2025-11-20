@@ -8,7 +8,7 @@ from pydantic import BaseModel
 import shutil
 import os
 import sys
-import requests # Thêm thư viện requests
+# Không cần requests vì YOLO sẽ tự tải model từ ID/tên file
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -17,8 +17,10 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 os.makedirs("/tmp/uploads", exist_ok=True)
 os.makedirs("/tmp/results", exist_ok=True)
 
-MODEL_PATH = "/tmp/best.onnx"
-MODEL_URL = os.environ.get("MODEL_DOWNLOAD_URL") # Lấy URL từ Biến môi trường
+# Lấy ID mô hình từ Biến môi trường. 
+# Ví dụ: 'ten-nguoi-dung/ten-repo-cua-ban.onnx' hoặc 'best.onnx' (nếu đã upload sẵn trong repo)
+# Nếu không có, sử dụng mô hình mặc định 'yolov8n.pt' làm fallback.
+HF_MODEL_ID = os.environ.get("HF_MODEL_ID", "yolov8n.pt") 
 
 # --- Hardcoded User (Chỉ dùng cho mục đích demo) ---
 DEMO_USER = "user_demo"
@@ -29,39 +31,16 @@ class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
-# --- Hàm tải file sử dụng Requests ---
-def download_model(url: str, dest: str):
-    """Tải file mô hình từ URL sử dụng thư viện requests."""
-    if not url:
-        print("❌ Lỗi: Không tìm thấy Biến môi trường MODEL_DOWNLOAD_URL.")
-        print("Vui lòng thiết lập giá trị cho biến này trên Render Dashboard.")
-        sys.exit(1)
-
-    print(f"Đang tải best.onnx từ URL...")
-    
-    try:
-        response = requests.get(url, stream=True, timeout=300) # Thêm timeout 5 phút
-        response.raise_for_status() # Kiểm tra lỗi HTTP
-        
-        with open(dest, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        print("TẢI XONG!")
-
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Lỗi khi tải file: {e}")
-        print("Vui lòng kiểm tra lại URL tải trực tiếp đã được thiết lập đúng chưa.")
-        sys.exit(1)
-
 # --- Logic khởi chạy và Tải Mô hình ---
-if not os.path.exists(MODEL_PATH):
-    download_model(MODEL_URL, MODEL_PATH)
-
 try:
-    model = YOLO(MODEL_PATH, task="detect")
+    # YOLO sẽ tự động tải model từ Hugging Face Hub (nếu là ID repo)
+    # hoặc tìm kiếm model trong thư mục làm việc (nếu là tên file như 'best.onnx')
+    print(f"Đang tải và khởi tạo model: {HF_MODEL_ID}...")
+    model = YOLO(HF_MODEL_ID, task="detect")
     print("MODEL ĐÃ SẴN SÀNG – BÂY GIỜ GỌI /predict THOẢI MÁI!")
 except Exception as e:
-    print(f"❌ Lỗi khi khởi tạo model YOLO: {e}")
+    print(f"❌ Lỗi khi khởi tạo model YOLO bằng ID {HF_MODEL_ID}: {e}")
+    print("Vui lòng kiểm tra lại HF_MODEL_ID, đảm bảo model đã được tải lên Hugging Face Hub hoặc file mô hình đã nằm trong thư mục gốc của dự án.")
     sys.exit(1)
 
 # --- Endpoint Xác thực ---
@@ -92,7 +71,7 @@ def verify_token(token: str = Depends(OAuth2PasswordRequestForm)):
 # --- Endpoint Phục vụ Giao diện ---
 @app.get("/", response_class=HTMLResponse)
 async def root():
-    # Phục vụ file HTML (sẽ được tạo ra ở bước 2)
+    # Phục vụ file HTML
     try:
         with open("index.html", "r", encoding="utf-8") as f:
             html_content = f.read()
