@@ -1,97 +1,57 @@
-from fastapi import FastAPI, File, UploadFile, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-import uvicorn
-import cv2
-import numpy as np
-import onnxruntime as ort
-import base64
-from ultralytics.utils.nms import non_max_suppression
-from ultralytics.utils.ops import scale_boxes
-import torch
+# app/main.py
+from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from ultralytics import YOLO
+import shutil
+import os
+import gdown
 
-# DÒNG DUY NHẤT ĐƯỢC THÊM – TỰ ĐỘNG TẢI MODEL TỪ GOOGLE DRIVE
-from download_model import *   # ← Đây là dòng quan trọng nhất! Chạy ngay khi app khởi động
-
-# ==================== CẤU HÌNH APP ====================
 app = FastAPI()
 
-# Static files (logo, css, js...)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# Templates
-templates = Jinja2Templates(directory="templates")
+# Thư mục tạm Render cho sẵn
+os.makedirs("/tmp/uploads", exist_ok=True)
+os.makedirs("/tmp/results", exist_ok=True)
 
-# Import tên bệnh + màu
-from disease_names import DISEASE_NAMES, COLORS
+# Đường dẫn model (Render sẽ tự tải về đây)
+MODEL_PATH = "/tmp/best.onnx"
+DRIVE_ID = "11myMCifUc1iMzobHWvRO-S2B9H6cmL-JA"
 
-# ==================== HÀM TIỀN XỬ LÝ ====================
-def preprocess(img):
-    img = cv2.resize(img, (640, 640))
-    img = img.transpose(2, 0, 1).astype(np.float32) / 255.0
-    img = np.expand_dims(img, axis=0)
-    return img
+# Tự động tải nếu chưa có (chỉ chạy khi khởi động)
+if not os.path.exists(MODEL_PATH):
+    print("Đang tải best.onnx từ Google Drive lần đầu...")
+    gdown.download(f"https://drive.google.com/uc?id={DRIVE_ID}", MODEL_PATH, quiet=False)
+    print("Tải xong! Bắt đầu load model...")
+else:
+    print("best.onnx đã có sẵn trong /tmp")
 
-# ==================== CÁC ROUTE ====================
+# Load model ONNX
+model = YOLO(MODEL_PATH, task="detect")
+print("Model ONNX đã sẵn sàng!")
 
-# Trang đăng nhập (tùy chọn)
-@app.get("/login")
-async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request})
+@app.get("/")
+async def root():
+    return {"message": "YOLOv8 ONNX từ Google Drive – chạy ngon!"}
 
-# Trang chủ
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    # Nếu muốn bắt buộc login → bỏ comment dòng dưới
-    # return RedirectResponse("/login")
-    return templates.TemplateResponse("index.html", {"request": request})
-
-# API dự đoán
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    contents = await file.read()
-    nparr = np.frombuffer(contents, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    if img is None:
-        return {"error": "Không thể đọc ảnh. Vui lòng thử lại!"}
+    input_path = f"/tmp/uploads/{file.filename}"
+    with open(input_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
 
-    # Inference
-    input_data = preprocess(img)
-    outputs = session.run(None, {input_name: input_data})
+    results = model(input_path, save=True, project="/tmp/results", name="predict", exist_ok=True)
+    saved_file = results[0].save_dir + "/" + os.path.basename(input_path)
 
-    # Post-process YOLOv8 ONNX
-    pred = torch.from_numpy(outputs[0]).sigmoid()
-    pred = non_max_suppression(pred, conf_thres=0.4, iou_thres=0.45, max_det=100)[0]
+    hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "localhost:8000")
+    return {
+        "result_url": f"https://{hostname}/img/{os.path.basename(saved_file)}"
+    }
 
-    # Scale boxes về ảnh gốc
-    if len(pred) > 0:
-        pred[:, :4] = scale_boxes((640, 640), pred[:, :4], img.shape[:2]).round()
-
-    # Vẽ kết quả
-    result_img = img.copy()
-    results = []
-
-    for det in pred:
-        x1, y1, x2, y2, conf, cls = det.tolist()
-        cls = int(cls)
-        label = DISEASE_NAMES.get(cls, "Không xác định")
-        color_hex = COLORS.get(cls, "#ffffff")
-        color = tuple(int(color_hex.lstrip('#')[i:i+2], 16) for i in (4, 2, 0))  # RGB → BGR
-
-        cv2.rectangle(result_img, (int(x1), int(y1)), (int(x2), int(y2)), color, 3)
-        cv2.putText(result_img, f"{label} {conf:.2f}",
-                    (int(x1), int(y1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
-
-        results.append({"disease": label, "confidence": round(conf, 3)})
-
-    # Encode ảnh
-    _, encoded = cv2.imencode('.jpg', result_img, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-    image_base64 = base64.b64encode(encoded).decode()
-
-    return {"image": image_base64, "diseases": results}
-
-# ==================== CHẠY SERVER ====================
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-
+@app.get("/img/{filename}")
+async def get_image(filename: str):
+    path = f"/tmp/results/predict/{filename}"
+    if not os.path.exists(path):
+        raise HTTPException(404, "Not found")
+    from fastapi.responses import FileResponse
+    return FileResponse(path)
