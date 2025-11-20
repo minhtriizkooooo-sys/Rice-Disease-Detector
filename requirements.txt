@@ -1,7 +1,7 @@
 fastapi
 uvicorn[standard]
 ultralytics>=8.2.80      # QUAN TRỌNG NHẤT – phải có >=8.2.80 để hỗ trợ ONNX ngon + tự động dùng onnxruntime
-gdown>=5.2.0             # tải từ Google Drive
+requests                 # SỬA: Thay thế gdown để tải file từ URL trực tiếp
 python-multipart         # để upload file ảnh
 # ──────────────────────────────
 # Dưới đây là TỰ ĐỘNG cài khi cài ultralytics, KHÔNG CẦN ghi riêng!
