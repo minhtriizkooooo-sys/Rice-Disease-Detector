@@ -1,10 +1,12 @@
 fastapi
 uvicorn[standard]
-onnxruntime
-opencv-python
-numpy
-ultralytics
-jinja2
-python-multipart
-torch
-gdown        # ← thêm dòng này
+ultralytics>=8.2.80      # QUAN TRỌNG NHẤT – phải có >=8.2.80 để hỗ trợ ONNX ngon + tự động dùng onnxruntime
+gdown>=5.2.0             # tải từ Google Drive
+python-multipart         # để upload file ảnh
+# ──────────────────────────────
+# Dưới đây là TỰ ĐỘNG cài khi cài ultralytics, KHÔNG CẦN ghi riêng!
+# onnxruntime
+# torch
+# opencv-python
+# numpy
+# jinja2
