@@ -3,6 +3,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from ultralytics import YOLO
+import shutil
 import os
 import gdown
 
@@ -13,28 +14,25 @@ os.makedirs("/tmp/uploads", exist_ok=True)
 os.makedirs("/tmp/results", exist_ok=True)
 
 MODEL_PATH = "/tmp/best.onnx"
-DRIVE_ID = "11myMCifUc1iMzobHWvRO-S2B9H6cmL-JA"   # ← ID của em
+DRIVE_ID = "11myMCifUc1iMzobHWvRO-S2B9H6cmL-JA"
 
-# Hàm tải chắc chắn thành công
 if not os.path.exists(MODEL_PATH):
-    print("Đang tải model từ Google Drive (chắc chắn thành công lần này)...")
-    gdown.download(
-        url=f"https://drive.google.com/uc?id={DRIVE_ID}",
-        output=MODEL_PATH,
-        quiet=False,
-        fuzzy=False
-    )
-    print("TẢI XONG 100%!")
+    print("Đang tải best.onnx từ Google Drive...")
+    gdown.download(f"https://drive.google.com/uc?id={DRIVE_ID}", MODEL_PATH, quiet=False)
+    print("TẢI XONG!")
 
 model = YOLO(MODEL_PATH, task="detect")
 print("MODEL ĐÃ SẴN SÀNG – BÂY GIỜ GỌI /predict THOẢI MÁI!")
 
-@app.get("/"); async def root(): return {"message": "API YOLOv8 ONNX chạy ngon rồi nè!"}
+@app.get("/")
+async def root():
+    return {"message": "API YOLOv8 ONNX chạy ngon rồi nè!"}
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     input_path = f"/tmp/uploads/{file.filename}"
-    with open(input_path, "wb") as f: shutil.copyfileobj(file.file, f)
+    with open(input_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
     
     results = model(input_path, save=True, project="/tmp/results", name="predict", exist_ok=True)
     saved_file = results[0].save_dir + "/" + os.path.basename(input_path)
@@ -47,5 +45,6 @@ async def predict(file: UploadFile = File(...)):
 @app.get("/img/{filename}")
 async def get_image(filename: str):
     path = f"/tmp/results/predict/{filename}"
-    if not os.path.exists(path): raise HTTPException(404)
+    if not os.path.exists(path):
+        raise HTTPException(404)
     return FileResponse(path)
